@@ -5,7 +5,6 @@
 //  Created by Kai Shao on 2024/11/8.
 //
 
-
 import Crypto
 import Foundation
 
@@ -67,7 +66,7 @@ public enum CryptoUtils {
         case invalidDecryptedData
     }
 
-    public static func decrypt(encryptedString: String, privateKeyPEM: String) throws -> String {
+    public static func decrypt(encryptedString: String, privateKeyPEM: String) throws -> Data {
         // Decode the base64 encoded encrypted string
         guard let encryptedData = Data(base64Encoded: encryptedString) else {
             throw DecryptionError.invalidBase64String
@@ -84,12 +83,7 @@ public enum CryptoUtils {
             throw error!.takeRetainedValue() as Error
         }
 
-        // Convert decrypted data to string
-        guard let decryptedString = String(data: decryptedData, encoding: .utf8) else {
-            throw DecryptionError.invalidDecryptedData
-        }
-
-        return decryptedString
+        return decryptedData
     }
 
     private static func convertPEMToPrivateKey(pemString: String) throws -> SecKey {
@@ -98,6 +92,8 @@ public enum CryptoUtils {
             .replacingOccurrences(of: "-----BEGIN PRIVATE KEY-----", with: "")
             .replacingOccurrences(of: "-----END PRIVATE KEY-----", with: "")
             .replacingOccurrences(of: "\n", with: "")
+
+        print("keyString: \(keyString)")
 
         guard let keyData = Data(base64Encoded: keyString) else {
             throw DecryptionError.invalidPrivateKey
@@ -112,7 +108,7 @@ public enum CryptoUtils {
         var error: Unmanaged<CFError>?
         guard let privateKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
             if let error = error?.takeRetainedValue() {
-                print("Error creating private key: \(error) \(error.localizedDescription)")
+                print("Error creating private key: \(error.localizedDescription)")
                 throw error as Error
             } else {
                 throw NSError(domain: "CryptoErrorDomain", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"])
