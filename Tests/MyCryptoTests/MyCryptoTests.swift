@@ -16,12 +16,8 @@ import Testing
 
     
     let dtoo = ["name": "kai", "sirname": "shao"]
-    let dto = EncryptedBody(
-        timestamp: Date().timeIntervalSince1970,
-        jsonData: try JSONEncoder().encode(dtoo)
-    )
     let encryptedData = try CryptoUtils.encrypt(
-        dto, publicKey: publicKeyPEM)
+        dtoo, publicKey: publicKeyPEM)
     var urlRequest = URLRequest(
         url: URL(string: "http://localhost:8081/v1/test")!)
     urlRequest.httpMethod = "POST"
