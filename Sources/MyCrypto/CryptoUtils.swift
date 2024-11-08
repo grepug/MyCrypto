@@ -16,103 +16,97 @@ public enum CryptoUtils {
         let publicKeyPEM = publicKey.rawRepresentation.base64EncodedString()
         return (privateKeyPEM, publicKeyPEM)
     }
-    
-    public static func encrypt<T: Codable>(object: T, publicKeyPEM: String) throws -> String {
-        // Convert the object to JSON data
-        let jsonData = try JSONEncoder().encode(object)
 
-        // Convert PEM encoded public key to SecKey
-        guard let publicKey = try? convertPEMToPublicKey(pemString: publicKeyPEM) else {
-            throw EncryptionError.invalidPublicKey
+    public static func encrypt<T: Codable>(_ object: T, publicKey: String) throws -> Data {
+        let message = try JSONEncoder().encode(object)
+        let messageString = String(data: message, encoding: .utf8)!
+        let data = try encrypt(message: messageString, publicKey: publicKey)
+
+        return data
+    }
+
+    public static func encrypt(message: String, publicKey: String) throws -> Data {
+        let publicKeyData = Data(base64Encoded: publicKey)!
+        // Convert the server's public key data to a P256 public key
+        let publicKey = try P256.KeyAgreement.PublicKey(rawRepresentation: publicKeyData)
+
+        // Generate an ephemeral private key for key agreement
+        let ephemeralPrivateKey = P256.KeyAgreement.PrivateKey()
+        let ephemeralPublicKey = ephemeralPrivateKey.publicKey
+
+        // Perform key agreement to derive a shared secret
+        let sharedSecret = try ephemeralPrivateKey.sharedSecretFromKeyAgreement(with: publicKey)
+
+        // Derive a symmetric key from the shared secret
+        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: Data(),
+            sharedInfo: Data(),
+            outputByteCount: 32
+        )
+
+        // Create a timestamp
+        let timestamp = Date().timeIntervalSince1970
+        let messageWithTimestamp = "\(message)|\(timestamp)"
+        let messageData = messageWithTimestamp.data(using: .utf8)!
+
+        // Encrypt the message data using the symmetric key
+        let sealedBox = try ChaChaPoly.seal(messageData, using: symmetricKey)
+
+        // Combine the ephemeral public key and the sealed box
+        var combinedData = Data()
+        combinedData.append(ephemeralPublicKey.rawRepresentation)
+        combinedData.append(sealedBox.combined)
+
+        return combinedData
+    }
+
+    public static func decrypt(data: Data, privateKeyString: String) throws -> Data {
+        let privateKey = try P256.KeyAgreement.PrivateKey(rawRepresentation: Data(base64Encoded: privateKeyString)!)
+
+        // Extract the ephemeral public key from the data
+        let ephemeralPublicKey = try! P256.KeyAgreement.PublicKey(rawRepresentation: data.prefix(64))
+
+        // Perform key agreement to derive a shared secret
+        let sharedSecret = try! privateKey.sharedSecretFromKeyAgreement(with: ephemeralPublicKey)
+
+        // Derive a symmetric key from the shared secret
+        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
+            salt: Data(),
+            sharedInfo: Data(),
+            outputByteCount: 32
+        )
+
+        // Extract the encrypted data (sealed box) from the remaining part of the input data
+        let sealedBox = try! ChaChaPoly.SealedBox(combined: data.dropFirst(64))
+
+        // Decrypt the sealed box using the derived symmetric key
+        let decryptedData = try! ChaChaPoly.open(sealedBox, using: symmetricKey)
+
+        // Convert decrypted data to string
+        guard let decryptedString = String(data: decryptedData, encoding: .utf8) else {
+            throw CryptoError.invalidDecryptedData
         }
 
-        // Encrypt the data
-        let encryptedData = try publicKey.encrypt(data: jsonData)
-
-        // Convert encrypted data to base64 string
-        let base64String = encryptedData.base64EncodedString()
-
-        return base64String
-    }
-
-    private static func convertPEMToPublicKey(pemString: String) throws -> P256.KeyAgreement.PublicKey {
-        let keyString =
-            pemString
-            .replacingOccurrences(of: "-----BEGIN PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "-----END PUBLIC KEY-----", with: "")
-            .replacingOccurrences(of: "\n", with: "")
-
-        guard let keyData = Data(base64Encoded: keyString) else {
-            throw EncryptionError.invalidPublicKey
+        // Split the message and timestamp
+        let components = decryptedString.split(separator: "|")
+        guard components.count == 2, let message = components.first, let timestampString = components.last, let timestamp = TimeInterval(timestampString) else {
+            throw CryptoError.invalidMessageFormat
         }
 
-        return try! P256.KeyAgreement.PublicKey(rawRepresentation: keyData) 
+        // Verify the timestamp
+        let currentTime = Date().timeIntervalSince1970
+        guard abs(currentTime - timestamp) <= 30 else {
+            throw CryptoError.timestampNotWithinRange
+        }
+
+        return String(message).data(using: .utf8)!
     }
 
-    enum EncryptionError: Error {
-        case invalidPublicKey
-    }
-
-    enum DecryptionError: Error {
-        case invalidBase64String
-        case invalidPrivateKey
+    public enum CryptoError: Error {
         case invalidDecryptedData
-    }
-
-    public static func decrypt(encryptedString: String, privateKeyPEM: String) throws -> Data {
-        // Decode the base64 encoded encrypted string
-        guard let encryptedData = Data(base64Encoded: encryptedString) else {
-            throw DecryptionError.invalidBase64String
-        }
-
-        // Convert PEM encoded private key to SecKey
-        guard let privateKey = try? convertPEMToPrivateKey(pemString: privateKeyPEM) else {
-            throw DecryptionError.invalidPrivateKey
-        }
-
-        // Decrypt the data
-        let decryptedData = try privateKey.decrypt(data: encryptedData)
-
-        return decryptedData
-    }
-
-    private static func convertPEMToPrivateKey(pemString: String) throws -> P256.KeyAgreement.PrivateKey {
-        let keyString =
-            pemString
-            .replacingOccurrences(of: "-----BEGIN PRIVATE KEY-----", with: "")
-            .replacingOccurrences(of: "-----END PRIVATE KEY-----", with: "")
-            .replacingOccurrences(of: "\n", with: "")
-
-        guard let keyData = Data(base64Encoded: keyString) else {
-            throw DecryptionError.invalidPrivateKey
-        }
-
-        return try P256.KeyAgreement.PrivateKey(rawRepresentation: keyData)
-    }
-}
-
-extension P256.KeyAgreement.PublicKey {
-    func encrypt(data: Data) throws -> Data {
-        let ephemeralKey = P256.KeyAgreement.PrivateKey()
-        let sharedSecret = try ephemeralKey.sharedSecretFromKeyAgreement(with: self)
-        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(using: SHA256.self,
-                                                               salt: Data(),
-                                                               sharedInfo: Data(),
-                                                               outputByteCount: 32)
-        let sealedBox = try ChaChaPoly.seal(data, using: symmetricKey)
-        return sealedBox.combined
-    }
-}
-
-extension P256.KeyAgreement.PrivateKey {
-    func decrypt(data: Data) throws -> Data {
-        let sealedBox = try ChaChaPoly.SealedBox(combined: data)
-        let ephemeralPublicKey = try ChaChaPoly.SealedBox(combined: data).nonce
-        let sharedSecret = try self.sharedSecretFromKeyAgreement(with: P256.KeyAgreement.PublicKey(rawRepresentation: ephemeralPublicKey))
-        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(using: SHA256.self,
-                                                               salt: Data(),
-                                                               sharedInfo: Data(),
-                                                               outputByteCount: 32)
-        return try ChaChaPoly.open(sealedBox, using: symmetricKey)
+        case invalidMessageFormat
+        case timestampNotWithinRange
     }
 }
