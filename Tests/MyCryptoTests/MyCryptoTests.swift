@@ -3,16 +3,14 @@ import Testing
 
 @testable import MyCrypto
 
-//@Test func gen() async throws {
-//    let (privateKeyPEM, publicKeyPEM) = CryptoUtils.generateKeyPair()
-//    print("privateKeyPEM: \(privateKeyPEM)")
-//    print("publicKeyPEM: \(publicKeyPEM)")
-//}
+@Test func gen() async throws {
+    let (privateKeyPEM, publicKeyPEM) = CryptoUtils.generateKeyPair()
+    print("privateKeyPEM: \(privateKeyPEM)")
+    print("publicKeyPEM: \(publicKeyPEM)")
+}
 
 @Test func example() async throws {
-    // Write your test here and use APIs like `#expect(...)` to check expected conditions.
-
-    let publicKeyPEM = "n53H4kpR9CSk/Ad/YHRUYHECcxODl5BLC90jLfKL0+XEjl49g7J00ZiAkd/RhXWAHstqPRUTlUbWIykhPokpEA=="
+    let publicKeyPEM = "nVXtjH5OJJ/vEd4IgpFZiWgno1zUiGO2X/ZTbmwGwFSr3d3c/nSShNRArCp24tIvX0m8yEB/jAMawXSV0Li4DA=="
 
     
     let dtoo = ["name": "kai", "sirname": "shao"]
