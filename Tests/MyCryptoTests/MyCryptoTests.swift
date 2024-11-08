@@ -3,18 +3,18 @@ import Testing
 
 @testable import MyCrypto
 
+@Test func gen() async throws {
+    let (privateKeyPEM, publicKeyPEM) = CryptoUtils.generateKeyPair()
+    print("privateKeyPEM: \(privateKeyPEM)")
+    print("publicKeyPEM: \(publicKeyPEM)")
+}
+
 @Test func example() async throws {
     // Write your test here and use APIs like `#expect(...)` to check expected conditions.
 
     let publicKeyPEM = """
         -----BEGIN PUBLIC KEY-----
-        MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvkzNNmv8PC/hgsj4X3ey
-        QKSPrVp7XaZU67J/yJlDA9qr45xj5TV67WcZJkli6hEyPu6k/pTxKu+GDRKjmAIr
-        BznElmXb1cd7Z//Sm8U/lCwJI460aigksSfVBPEjpO0CAiDMBMW3r1Att+0NG81O
-        1R9RTFCJCH1o3r+Aav5IJenYRWIVUKctXMu59N1qYV5heWs9mnwlpjhG/3uN6c8h
-        IG5r0/Nue6LgDT0WFf5+D0odkrZ2pI+WcaYyVmqZHRxFS25yGRtXBn1aANcMkq//
-        0lG7z0Fq86+yCYLEY9DPPkP15ea1PvhdL7MMyAPKjZJVksef04AYlYSffW86D5JL
-        UwIDAQAB
+        n53H4kpR9CSk/Ad/YHRUYHECcxODl5BLC90jLfKL0+XEjl49g7J00ZiAkd/RhXWAHstqPRUTlUbWIykhPokpEA==
         -----END PUBLIC KEY-----
         """
 

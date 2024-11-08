@@ -9,6 +9,14 @@ import Crypto
 import Foundation
 
 public enum CryptoUtils {
+    public static func generateKeyPair() -> (String, String) {
+        let privateKey = P256.KeyAgreement.PrivateKey()
+        let publicKey = privateKey.publicKey
+        let privateKeyPEM = privateKey.rawRepresentation.base64EncodedString()
+        let publicKeyPEM = publicKey.rawRepresentation.base64EncodedString()
+        return (privateKeyPEM, publicKeyPEM)
+    }
+    
     public static func encrypt<T: Codable>(object: T, publicKeyPEM: String) throws -> String {
         // Convert the object to JSON data
         let jsonData = try JSONEncoder().encode(object)
@@ -19,10 +27,7 @@ public enum CryptoUtils {
         }
 
         // Encrypt the data
-        var error: Unmanaged<CFError>?
-        guard let encryptedData = SecKeyCreateEncryptedData(publicKey, .rsaEncryptionPKCS1, jsonData as CFData, &error) as Data? else {
-            throw error!.takeRetainedValue() as Error
-        }
+        let encryptedData = try publicKey.encrypt(data: jsonData)
 
         // Convert encrypted data to base64 string
         let base64String = encryptedData.base64EncodedString()
@@ -30,7 +35,7 @@ public enum CryptoUtils {
         return base64String
     }
 
-    private static func convertPEMToPublicKey(pemString: String) throws -> SecKey {
+    private static func convertPEMToPublicKey(pemString: String) throws -> P256.KeyAgreement.PublicKey {
         let keyString =
             pemString
             .replacingOccurrences(of: "-----BEGIN PUBLIC KEY-----", with: "")
@@ -41,19 +46,7 @@ public enum CryptoUtils {
             throw EncryptionError.invalidPublicKey
         }
 
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-            kSecAttrKeyClass as String: kSecAttrKeyClassPublic,
-            kSecAttrKeySizeInBits as String: NSNumber(value: 2048),
-            kSecReturnPersistentRef as String: true,
-        ]
-
-        var error: Unmanaged<CFError>?
-        guard let publicKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
-            throw error!.takeRetainedValue() as Error
-        }
-
-        return publicKey
+        return try! P256.KeyAgreement.PublicKey(rawRepresentation: keyData) 
     }
 
     enum EncryptionError: Error {
@@ -78,43 +71,48 @@ public enum CryptoUtils {
         }
 
         // Decrypt the data
-        var error: Unmanaged<CFError>?
-        guard let decryptedData = SecKeyCreateDecryptedData(privateKey, .rsaEncryptionPKCS1, encryptedData as CFData, &error) as Data? else {
-            throw error!.takeRetainedValue() as Error
-        }
+        let decryptedData = try privateKey.decrypt(data: encryptedData)
 
         return decryptedData
     }
 
-    private static func convertPEMToPrivateKey(pemString: String) throws -> SecKey {
+    private static func convertPEMToPrivateKey(pemString: String) throws -> P256.KeyAgreement.PrivateKey {
         let keyString =
             pemString
             .replacingOccurrences(of: "-----BEGIN PRIVATE KEY-----", with: "")
             .replacingOccurrences(of: "-----END PRIVATE KEY-----", with: "")
             .replacingOccurrences(of: "\n", with: "")
 
-        print("keyString: \(keyString)")
-
         guard let keyData = Data(base64Encoded: keyString) else {
             throw DecryptionError.invalidPrivateKey
         }
 
-        let attributes: [String: Any] = [
-            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
-            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
-            kSecAttrKeySizeInBits as String: 2048,
-        ]
+        return try P256.KeyAgreement.PrivateKey(rawRepresentation: keyData)
+    }
+}
 
-        var error: Unmanaged<CFError>?
-        guard let privateKey = SecKeyCreateWithData(keyData as CFData, attributes as CFDictionary, &error) else {
-            if let error = error?.takeRetainedValue() {
-                print("Error creating private key: \(error.localizedDescription)")
-                throw error as Error
-            } else {
-                throw NSError(domain: "CryptoErrorDomain", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unknown error occurred"])
-            }
-        }
+extension P256.KeyAgreement.PublicKey {
+    func encrypt(data: Data) throws -> Data {
+        let ephemeralKey = P256.KeyAgreement.PrivateKey()
+        let sharedSecret = try ephemeralKey.sharedSecretFromKeyAgreement(with: self)
+        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(using: SHA256.self,
+                                                               salt: Data(),
+                                                               sharedInfo: Data(),
+                                                               outputByteCount: 32)
+        let sealedBox = try ChaChaPoly.seal(data, using: symmetricKey)
+        return sealedBox.combined
+    }
+}
 
-        return privateKey
+extension P256.KeyAgreement.PrivateKey {
+    func decrypt(data: Data) throws -> Data {
+        let sealedBox = try ChaChaPoly.SealedBox(combined: data)
+        let ephemeralPublicKey = try ChaChaPoly.SealedBox(combined: data).nonce
+        let sharedSecret = try self.sharedSecretFromKeyAgreement(with: P256.KeyAgreement.PublicKey(rawRepresentation: ephemeralPublicKey))
+        let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(using: SHA256.self,
+                                                               salt: Data(),
+                                                               sharedInfo: Data(),
+                                                               outputByteCount: 32)
+        return try ChaChaPoly.open(sealedBox, using: symmetricKey)
     }
 }
