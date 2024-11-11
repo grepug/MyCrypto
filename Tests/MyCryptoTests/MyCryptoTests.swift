@@ -26,3 +26,34 @@ import Testing
 
     #expect(dtoo == dtooo)
 }
+
+@Test func dify() async throws {
+    // needed to be removed later
+    let key = "xxxxx"
+    
+    let inputs = Inputs(goal: "学英语")
+    let dto = DifyParam<Inputs>.init(kind: "gen_goal", userId: "xxx", inputs: inputs, stream: false)
+    var request = URLRequest(
+        url: URL(string: "http://localhost:8081/v1/dify")!)
+    request.httpMethod = "POST"
+    let encrypted = try CryptoUtils.encrypt(dto, publicKey: key)
+    request.httpBody = encrypted
+    
+    let (data, _) = try await URLSession.shared.data(for: request)
+    let string = String(data: data, encoding: .utf8)!
+    
+    print("string", string)
+    
+    #expect(string.starts(with: "{"))
+}
+
+struct DifyParam<Input: Codable>: Codable {
+    var kind: String
+    var userId: String
+    var inputs: Input
+    var stream: Bool
+}
+
+struct Inputs: Codable {
+    var goal: String
+}
