@@ -65,10 +65,10 @@ public enum CryptoUtils {
         let privateKey = try P256.KeyAgreement.PrivateKey(rawRepresentation: Data(base64Encoded: privateKeyString)!)
 
         // Extract the ephemeral public key from the data
-        let ephemeralPublicKey = try! P256.KeyAgreement.PublicKey(rawRepresentation: data.prefix(64))
+        let ephemeralPublicKey = try P256.KeyAgreement.PublicKey(rawRepresentation: data.prefix(64))
 
         // Perform key agreement to derive a shared secret
-        let sharedSecret = try! privateKey.sharedSecretFromKeyAgreement(with: ephemeralPublicKey)
+        let sharedSecret = try privateKey.sharedSecretFromKeyAgreement(with: ephemeralPublicKey)
 
         // Derive a symmetric key from the shared secret
         let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
@@ -79,10 +79,10 @@ public enum CryptoUtils {
         )
 
         // Extract the encrypted data (sealed box) from the remaining part of the input data
-        let sealedBox = try! ChaChaPoly.SealedBox(combined: data.dropFirst(64))
+        let sealedBox = try ChaChaPoly.SealedBox(combined: data.dropFirst(64))
 
         // Decrypt the sealed box using the derived symmetric key
-        let decryptedData = try! ChaChaPoly.open(sealedBox, using: symmetricKey)
+        let decryptedData = try ChaChaPoly.open(sealedBox, using: symmetricKey)
 
         // Convert decrypted data to string
         guard let decryptedString = String(data: decryptedData, encoding: .utf8) else {
